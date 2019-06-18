@@ -21,11 +21,11 @@ holfuy_dyn_url = r'https://holfuy.com/dynamic/camsave/s{}/{}_{}.jpg'
 
 # SETTINGS
 # local settings
-save_dir = 'c:\\users\\johannes\\desktop\\holfuy_test'
-backup_dir = 'c:\\users\\johannes\\desktop\\holfuy_test_backup'
+save_dir = ''
+backup_dir = ''
 
 # remote settings
-stations = [551, 1003]  # station numbers as integers
+stations = []  # station numbers as integers
 
 
 def retrieve_last(station_list):
