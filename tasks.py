@@ -105,7 +105,7 @@ def daily_tasks():
     if cfg['backup_dir']:
         try:
             utils.custom_copytree(cfg['save_dir'], cfg['backup_dir'])
-        except (WindowsError, RuntimeError, PermissionError):
+        except (RuntimeError, PermissionError):
             log.warning('Backup to directory {} did not work. No retry attempt'
                         ' has been made.')
 
