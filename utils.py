@@ -1,7 +1,19 @@
 import os
 import shutil
 import time
+import re
+import glob
+from configobj import ConfigObj
 from functools import wraps
+import matplotlib as mpl
+import ftplib
+import urllib.request
+import platform
+import sys
+import hashlib
+import zipfile
+import tempfile
+import paramiko as pm
 
 
 def retry(exceptions, tries=100, delay=60, backoff=1, log_to=None):
@@ -54,6 +66,18 @@ def retry(exceptions, tries=100, delay=60, backoff=1, log_to=None):
     return deco_retry
 
 
+def set_external_animation_paths():
+    if sys.platform.startswith('win'):
+        fpath = os.popen('where ffmpeg').read().split('\n')[0]
+        mpath = os.popen('where magick').read().split('\n')[0]
+    else:
+        fpath = os.popen('which ffmpeg').read().split('\n')[0]
+        mpath = os.popen('which convert').read().split('\n')[0]
+
+    mpl.rcParams['animation.ffmpeg_path'] = fpath
+    mpl.rcParams['animation.convert_path'] = mpath
+
+
 def custom_copytree(src, dst, symlinks=False, ignore=None):
     """
     A custom version of shutil.copytree not complaining when the destination
@@ -87,3 +111,101 @@ def custom_copytree(src, dst, symlinks=False, ignore=None):
             shutil.copytree(s, d, symlinks, ignore)
         else:
             shutil.copy2(s, d)
+
+
+def parse_params(paramfile='./params.cfg'):
+    cfg = ConfigObj(paramfile, file_error=True)
+
+    for p in ['stations', 'stations_to_fribourg']:
+        cfg[p] = [int(i) for i in cfg.as_list(p)]
+
+    for p in ['retrieval_interval_min']:
+        cfg[p] = cfg.as_int(p)
+
+    for p in ['copy_to_uni_fribourg', 'copy_to_website_dir']:
+        cfg[p] = cfg.as_bool(p)
+
+    return cfg
+
+
+def parse_credentials_file(credfile=None):
+    if credfile is None:
+        credfile = os.path.join(os.path.abspath(os.path.dirname(__file__)),
+                                '.credentials')
+    cr = ConfigObj(credfile, file_error=True)
+
+    return cr
+
+
+def copy_to_ufr_ftp(img_dir, credfile=None, user='plainemorte'):
+    """
+    Copy files to FTP server of University of Fribourg.
+
+    Parameters
+    ----------
+    credfile: str
+        Path to the credentials file (must be parsable as
+        configobj.ConfigObj).
+    user: str
+        User to log in with. Default: 'plainemorte'.
+    """
+    cr = parse_credentials_file(credfile)
+
+    if user == 'plainemorte':
+        client = ftplib.FTP(cr['ufr-ftp']['host'], cr['ufr-ftp']['user'],
+                            cr['ufr-ftp']['password'])
+        client.login(user=cr['ufr-ftp']['user'],
+                     passwd=cr['ufr-ftp']['password'])
+    else:
+        raise ValueError(
+            'No credentials known for Uni Fribourg FTP user {}'.format(user))
+
+    client.cwd('findelen_cambilder')
+    imgs = glob.glob(os.path.join(img_dir, '*.jpg'))
+    for img in imgs:
+        fp = open(img, 'rb')
+        client.storbinary('STOR %s' % os.path.basename(img), fp, 1024)
+
+
+def copy_to_webpage_dir(src_dir, dest_dir=None, file_type=None):
+    """
+    Copy content from given path to the CRAMPON webpage directory.
+
+    Parameters
+    ----------
+    src_dir: str
+        Source directory containing the file to be copied.
+    dest_dir: str
+        If given, the directory where to save the files in the webpage tree
+        under 'public_html'. Default: None (use
+    file_type: str
+        File type ending to be copied, e.g. "mp4" for videos. Default: None
+        (copy all files).
+    """
+    if file_type is not None:
+        to_put = glob.glob(os.path.join(src_dir, '*' + file_type))
+    else:
+        to_put = glob.glob(os.path.join(src_dir, '*'))
+
+    client = pm.SSHClient()
+    client.load_system_host_keys()
+    client.set_missing_host_key_policy(pm.AutoAddPolicy())
+    cred = parse_credentials_file()
+    # first connect to login.ee.ethz.ch, then ssh to webbi04
+    client.connect(cred['webbi04']['host'], cred['webbi04']['port'],
+                   cred['webbi04']['user'], cred['webbi04']['password'])
+    _ = client.exec_command(cred['webbi04']['remote_cmd'])
+
+    # now we should be on webbi04
+    sftp = client.open_sftp()
+    if dest_dir is not None:
+        srv_path = './public_html/' + dest_dir
+    else:
+        srv_path = './public_html/' + os.path.split(src_dir)[1]
+
+    for tp in to_put:
+        print(tp, srv_path + '/' + os.path.split(tp)[-1])
+        sftp.listdir()
+        sftp.put(tp, srv_path + '/' + os.path.split(tp)[-1])
+    sftp.close()
+    client.close()
