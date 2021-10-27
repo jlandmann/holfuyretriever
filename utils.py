@@ -192,20 +192,24 @@ def copy_to_webpage_dir(src_dir, dest_dir=None, file_type=None):
     client.set_missing_host_key_policy(pm.AutoAddPolicy())
     cred = parse_credentials_file()
     # first connect to login.ee.ethz.ch, then ssh to webbi04
-    client.connect(cred['webbi04']['host'], cred['webbi04']['port'],
-                   cred['webbi04']['user'], cred['webbi04']['password'])
-    _ = client.exec_command(cred['webbi04']['remote_cmd'])
+    try:
+        client.connect(cred['webbi11']['host'], cred['webbi11']['port'],
+                       cred['webbi11']['user'], cred['webbi11']['password'])
+        _ = client.exec_command(cred['webbi11']['remote_cmd'])
 
-    # now we should be on webbi04
-    sftp = client.open_sftp()
-    if dest_dir is not None:
-        srv_path = './public_html/' + dest_dir
-    else:
-        srv_path = './public_html/' + os.path.split(src_dir)[1]
+        # now we should be on webbi04
+        sftp = client.open_sftp()
+        if dest_dir is not None:
+            srv_path = './public_html/' + dest_dir
+        else:
+            srv_path = './public_html/' + os.path.split(src_dir)[1]
 
-    for tp in to_put:
-        print(tp, srv_path + '/' + os.path.split(tp)[-1])
-        sftp.listdir()
-        sftp.put(tp, srv_path + '/' + os.path.split(tp)[-1])
-    sftp.close()
-    client.close()
+        for tp in to_put:
+            print(tp, srv_path + '/' + os.path.split(tp)[-1])
+            sftp.listdir()
+            sftp.put(tp, srv_path + '/' + os.path.split(tp)[-1])
+        sftp.close()
+        client.close()
+    except Exception:
+        print('Could not connect to webbi 11')
+        pass
