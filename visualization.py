@@ -2,6 +2,10 @@ import utils
 import numpy as np
 import glob
 import xarray as xr
+import matplotlib
+# Force matplotlib to not use any Xwindows backend.
+# needs to be executed before plt import
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib import animation
 import datetime as dt
@@ -34,17 +38,31 @@ class UpdateQuad(object):
         return self.quad
 
 
-def make_image_animation(path, save_path=None):
+def make_image_animation(path, save_path=None, speedup='auto'):
 
     # set the paths to external animation binaries
     utils.set_external_animation_paths()
 
     # concatenate and work on files
     flist = glob.glob(os.path.join(path, '*.jpg'))
+    
+    # sometimes they are messed up
+    flist = sorted(flist)
+    
+    if speedup == 'auto':
+        speedfac = int(len(flist) / 500)
+    else:
+        speedfac = speedup
+    flist = flist[::speedfac]
+    
     dates = [dt.datetime.strptime(os.path.basename(s), '%Y-%m-%d_%H-%M.jpg')
              for s in flist]
     data = [xr.open_rasterio(f) for f in flist]
-    conc = xr.concat(data, dim='time')
+    try:
+        conc = xr.concat(data, dim='time')
+    except MemoryError:
+        log.info('Experienced MemoryError')
+        return
     conc = conc.reindex(time=np.array(dates))
     conc = conc.reindex(y=conc.y[::-1])
     conc['time_str'] = (['time'], [d.strftime('%Y-%m-%d %H:%M') for d in
@@ -54,6 +72,10 @@ def make_image_animation(path, save_path=None):
 
     # make actual animation
     fig, ax = plt.subplots()
+    
+    # try and switch interactive mode off so that the plot does not open
+    plt.ioff()
+    
     ud = UpdateQuad(ax, conc)
     anim = animation.FuncAnimation(fig, ud, init_func=ud.init,
                                    frames=len(conc.time), blit=False,
